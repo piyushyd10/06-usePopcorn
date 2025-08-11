@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import StarRating from "./StarRating";
 import { useMovies } from "./useMovies";
-import { useLocalStorageState } from "./useLocalStorageState";
+// import { useLocalStorageState } from "./useLocalStorageState";
 import { useKey } from "./useKey";
+import { useWatchlist } from "./useWatchlist";
+import { useLocalStorageState } from "./useLocalStorageState";
+import Loader from "./Loader";
+import { useAuth } from "./AuthContext";
 
 const tempMovieData = [
   {
@@ -63,7 +68,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   // const tempQuery = "Interstellar";
 
-  const { movies, isLoading, error, setIsLoading } = useMovies(query);
+  const { movies, isLoading, error } = useMovies(query);
 
   function handleSelectMovie(id) {
     setSelectedId((selectedId) => (id === selectedId ? null : id));
@@ -75,8 +80,6 @@ export default function App() {
 
   function handleAddWatched(movie) {
     setWatched((watched) => [...watched, movie]);
-
-    // localStorage.setItem("watched", JSON.stringify([...watched, movie]));
   }
 
   function handledeleteWatched(id) {
@@ -86,8 +89,10 @@ export default function App() {
   return (
     <>
       <Navbar movies={movies}>
-        <Search query={query} setQuery={setQuery} />
-        <NumResult movies={movies} />
+        <div className="search-wrapper">
+          <Search query={query} setQuery={setQuery} />
+          <NumResult movies={movies} />
+        </div>
       </Navbar>
       <Main>
         <Box>
@@ -104,8 +109,6 @@ export default function App() {
             <MovieDetails
               selectedId={selectedId}
               onCloseMovie={handleCloseMovie}
-              isLoading={isLoading}
-              setIsLoading={setIsLoading}
               onAddWatched={handleAddWatched}
               watched={watched}
             />
@@ -124,10 +127,6 @@ export default function App() {
   );
 }
 
-function Loader() {
-  return <p className="loader">LOADING...</p>;
-}
-
 function ErrorMessage({ message }) {
   return (
     <p className="error">
@@ -137,16 +136,73 @@ function ErrorMessage({ message }) {
   );
 }
 
-function Navbar({ children }) {
+export function Navbar({ children, movies }) {
+  const { isAuthenticated, user, logout } = useAuth() || {};
+  const navigate = useNavigate();
   return (
     <nav className="nav-bar">
-      <Logo />
-      {children}
+      <div className="nav-left">
+        <NavButtons />
+      </div>
+      <div className="nav-center">{children}</div>
+      <div className="nav-right">
+        <Logo />
+        {isAuthenticated ? (
+          <div className="auth-chip">
+            <span className="auth-email">{user.email}</span>
+            <button className="btn-auth btn-auth--small" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn-auth btn-auth--small"
+            onClick={() => navigate("/login")}
+          >
+            Login
+          </button>
+        )}
+      </div>
     </nav>
   );
 }
 
-function Logo() {
+function NavButtons() {
+  return (
+    <>
+      <Link
+        to="/"
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "#fff",
+          fontSize: "1.6rem",
+          fontWeight: 600,
+          textDecoration: "none",
+          cursor: "pointer",
+        }}
+      >
+        Home
+      </Link>
+      <Link
+        to="/watchlist"
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "#fff",
+          fontSize: "1.6rem",
+          fontWeight: 600,
+          textDecoration: "none",
+          cursor: "pointer",
+        }}
+      >
+        Watchlist
+      </Link>
+    </>
+  );
+}
+
+export function Logo() {
   return (
     <div className="logo">
       <span role="img">🍿</span>
@@ -155,7 +211,7 @@ function Logo() {
   );
 }
 
-function Search({ query, setQuery }) {
+export function Search({ query, setQuery }) {
   const inputEl = useRef(null);
 
   useKey("Enter", function () {
@@ -176,7 +232,7 @@ function Search({ query, setQuery }) {
   );
 }
 
-function NumResult({ movies }) {
+export function NumResult({ movies }) {
   return (
     <p className="num-results">
       Found <strong>{movies.length}</strong> results
@@ -252,15 +308,9 @@ function Movie({ movie, onSelectMovie }) {
   );
 }
 
-function MovieDetails({
-  selectedId,
-  onCloseMovie,
-  isLoading,
-  setIsLoading,
-  onAddWatched,
-  watched,
-}) {
+function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
   const [movie, setMovie] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState("");
   const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
   const watchedUserrating = watched.find(
@@ -290,19 +340,19 @@ function MovieDetails({
   } = movie;
 
   function handleAdd() {
+    if (isWatched) return;
     const newWatchedMovie = {
       imdbID: selectedId,
       title,
       year,
       poster,
       imdbRating: Number(imdbRating),
-      runtime: Number(runtime.split(" ").at(0)),
-      userRating,
-      countRatingDecisions: countRef.current,
+      userRating: Number(userRating),
+      duration: Number(runtime?.split(" ")[0]),
     };
 
     onAddWatched(newWatchedMovie);
-    // onCloseMovie();
+    onCloseMovie();
   }
 
   useKey("Escape", onCloseMovie);
@@ -405,10 +455,10 @@ function MovieDetails({
   );
 }
 
-function WatchedSummary({ watched }) {
+export function WatchedSummary({ watched }) {
   const avgImdbRating = average(watched.map((movie) => movie.imdbRating));
   const avgUserRating = average(watched.map((movie) => movie.userRating));
-  const avgRuntime = average(watched.map((movie) => movie.runtime));
+  const avgDuration = average(watched.map((movie) => movie.duration));
   return (
     <div className="summary">
       <h2>Movies you watched</h2>
@@ -427,14 +477,14 @@ function WatchedSummary({ watched }) {
         </p>
         <p>
           <span>⏳</span>
-          <span>{avgRuntime} min</span>
+          <span>{avgDuration.toFixed(2)} min</span>
         </p>
       </div>
     </div>
   );
 }
 
-function WatchedMoviesList({ watched, onDeleteWatched }) {
+export function WatchedMoviesList({ watched, onDeleteWatched }) {
   return (
     <ul className="list">
       {watched.map((movie) => (
@@ -450,8 +500,8 @@ function WatchedMoviesList({ watched, onDeleteWatched }) {
 
 function WatchedMovie({ movie, onDeleteWatched }) {
   return (
-    <li key={movie.imdbID}>
-      <img src={movie.poster} alt={`${movie.Title} poster`} />
+    <li>
+      <img src={movie.poster} alt={`${movie.title} poster`} />
       <h3>{movie.title}</h3>
       <div>
         <p>
@@ -464,7 +514,7 @@ function WatchedMovie({ movie, onDeleteWatched }) {
         </p>
         <p>
           <span>⏳</span>
-          <span>{movie.runtime} min</span>
+          <span>{movie.duration} min</span>
         </p>
 
         <button
